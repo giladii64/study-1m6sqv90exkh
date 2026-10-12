@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>מעקב לימודים</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1b1f2a;--mut:#6b7280;--ac:#2b4acb;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;--bd:#e5e7eb}
+@media(prefers-color-scheme:dark){:root{--bg:#10131a;--card:#1a1f2b;--tx:#e8eaf0;--mut:#9aa3b2;--ac:#7c97ff;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24;--bd:#2a3140}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;padding-bottom:70px}
+header{padding:16px;font-size:20px;font-weight:700}
+main{padding:0 16px;max-width:760px;margin:auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.mut{color:var(--mut);font-size:13px}
+h2{font-size:16px;margin:18px 0 8px}
+button{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+button.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+button.no{background:var(--bad);color:#fff;border-color:var(--bad)}
+nav{position:fixed;bottom:0;inset-inline:0;background:var(--card);border-top:1px solid var(--bd);display:flex}
+nav button{flex:1;border:0;border-radius:0;padding:14px 4px;background:none}
+nav button.on{color:var(--ac);font-weight:700}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--bd)}
+.urg{color:var(--bad);font-weight:600}.soon{color:var(--warn);font-weight:600}
+input,select{font:inherit;width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);margin:3px 0}
+label{font-size:13px;color:var(--mut)}
+.bar{height:8px;background:var(--bd);border-radius:99px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--ok)}
+</style>
+</head>
+<body>
+<header>📚 מעקב לימודים <span class="mut" id="today"></span></header>
+<main id="v"></main>
+<nav id="nav"></nav>
+<script src="syllabus.js"></script>
+<script>
+// ===== נתוני בסיס (מתוך huji-calendar/moodle-calendar-proxy.gs) =====
+const COURSES={'55223':'מסוגלות גלובלית','55312':'נתונים וטכנולוגיה בעסקים','55687':'התנהגות ארגונית','55804':'יסודות השיווק','55945':'שיטות כמותיות בניהול','57102':'מימון לכלכלנים','57305':'מאקרו כלכלה','57307':'תורת המחירים א','57322':'מבוא לאקונומטריקה'};
+const SEM={A:{start:'2026-10-11',end:'2027-01-14'},B:{start:'2027-03-07',end:'2027-06-10'}};
+// [יום(0=ראשון), התחלה, סיום, קורס, סוג, סמסטר, מיקום]
+const SCHED=[
+[0,'09:30','12:00','55312','שיעור ותרגיל','A','77202 חדרי טבע'],
+[1,'13:00','14:30','57322','שיעור','A','27112 חברה'],
+[1,'15:00','16:30','57305','שיעור ותרגיל','A','27112 חברה'],
+[1,'17:00','18:30','57307','שיעור ותרגיל','A','27112 חברה'],
+[2,'10:30','13:00','55687','שיעור ותרגיל','A','22203 חברה'],
+[2,'10:30','12:00','57305','מעבדה','A','77202 חדרי טבע'],
+[2,'12:30','14:00','57307','מעבדה','A','27112 חברה'],
+[2,'13:30','16:00','55804','שיעור ותרגיל','A','21201 חברה'],
+[3,'10:30','13:00','55945','שיעור ותרגיל','A','21208 חברה'],
+[3,'14:30','16:00','57322','תרגיל','A','77101 חדרי טבע'],
+[3,'16:30','18:00','57322','שיעור','A','27106 חברה'],
+[3,'18:30','20:00','57305','שיעור ותרגיל','A','27112 חברה'],
+[4,'12:30','14:00','57307','שיעור ותרגיל','A','27112 חברה'],
+[2,'14:30','16:00','55223','שיעור ותרגיל','B','21201 חברה'],
+[3,'16:30','20:00','57102','שיעור','B','77202 חדרי טבע']];
+const EXAMS=[['57305','א','2027-01-21'],['57305','ב','2027-02-26'],['55687','א','2027-01-24'],['55687','ב','2027-02-19'],['55945','א','2027-01-29'],['55945','ב','2027-02-21'],['57307','א','2027-01-31'],['57307','ב','2027-02-22'],['55804','א','2027-01-31'],['55804','ב','2027-02-28'],['57322','א','2027-02-07'],['57322','ב','2027-03-05'],['57102','א','2027-07-29'],['57102','ב','2027-08-20']];
+
+// ===== מצב ושמירה (localStorage) =====
+const KEY='huji-study-v1';
+let S={assign:[],att:{}};
+try{S=Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+if(!S.seeded){S.assign.push(...SEED_ASSIGN.map(a=>({...a})));S.seeded=1;save()}
+
+// ===== עזרים =====
+const iso=d=>{const z=new Date(d.getTime()-d.getTimezoneOffset()*6e4);return z.toISOString().slice(0,10)};
+const D=s=>new Date(s+'T00:00:00');
+const DAYS=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+let sem=iso(new Date())>='2027-03-01'?'B':'A';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// כל המפגשים בטווח תאריכים
+function sessions(from,to){
+  const out=[];
+  for(let d=new Date(from);d<=to;d.setDate(d.getDate()+1)){
+    const ds=iso(d),dow=d.getDay();
+    for(const r of SCHED){
+      if(r[0]!==dow)continue;
+      const sm=SEM[r[5]];
+      if(ds<sm.start||ds>sm.end)continue;
+      if((NOCLASS[r[3]]||[]).includes(ds))continue;
+      out.push({id:ds+'|'+r[3]+'|'+r[1]+'|'+r[4],date:ds,start:r[1],end:r[2],course:r[3],type:r[4],room:r[6]});
+    }
+  }
+  return out.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+}
+function daysLeft(ds){return Math.ceil((new Date(ds+'T23:59:00')-new Date())/864e5)}
+function dl(ds){const n=daysLeft(ds);const c=n<0?'urg':n<=2?'urg':n<=7?'soon':'';return `<span class="${c}">${n<0?'עבר':n===0?'היום':'עוד '+n+' ימים'}</span>`}
+
+// ===== פעולות =====
+function mark(id,v){S.att[id]=S.att[id]===v?undefined:v;if(S.att[id]===undefined)delete S.att[id];save();render()}
+function setStatus(i,v){S.assign[i].status=v;save();render()}
+function delAssign(i){if(confirm('למחוק?')){S.assign.splice(i,1);save();render()}}
+function addAssign(){
+  const f=id=>document.getElementById(id).value;
+  if(!f('a-title')||!f('a-due'))return alert('חסר שם או תאריך הגשה');
+  S.assign.push({course:f('a-course'),title:f('a-title'),open:f('a-open'),due:f('a-due'),weight:f('a-w'),link:f('a-link'),status:'todo'});
+  save();render();
+}
+function exportJson(){const b=new Blob([JSON.stringify(S,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='study-backup.json';a.click()}
+function importJson(e){const r=new FileReader();r.onload=()=>{try{S=Object.assign({assign:[],att:{}},JSON.parse(r.result));save();render()}catch(x){alert('קובץ לא תקין')}};r.readAsText(e.target.files[0])}
+
+// ===== תצוגות =====
+const sessCard=s=>{
+  const st=S.att[s.id];
+  return `<div class="card"><div class="row"><div><b>${esc(COURSES[s.course])}</b> <span class="tag">${esc(s.type)}</span><div class="mut">${s.start}–${s.end} · ${esc(s.room)}</div></div>
+  <div><button class="${st==='y'?'ok':''}" onclick="mark('${s.id}','y')">הייתי</button> <button class="${st==='n'?'no':''}" onclick="mark('${s.id}','n')">לא</button></div></div></div>`};
+
+const views={
+today(){
+  const now=new Date(),td=iso(now);
+  const t=sessions(now,now);
+  const end=new Date(now);end.setDate(end.getDate()+7);
+  const as=S.assign.map((a,i)=>({...a,i})).filter(a=>a.status!=='done'&&daysLeft(a.due)<=7).sort((a,b)=>a.due.localeCompare(b.due));
+  const ex=EXAMS.filter(e=>e[2]>=td).sort((a,b)=>a[2].localeCompare(b[2])).slice(0,3);
+  return `<h2>השיעורים היום</h2>${t.map(sessCard).join('')||'<div class="card mut">אין שיעורים היום 🎉</div>'}
+  <h2>הגשות השבוע</h2>${as.map(a=>`<div class="card row"><div><b>${esc(a.title)}</b><div class="mut">${esc(COURSES[a.course])}</div></div><div>${dl(a.due)}</div></div>`).join('')||'<div class="card mut">אין הגשות דחופות</div>'}
+  <h2>מבחנים קרובים</h2>${ex.map(e=>`<div class="card row"><div><b>${esc(COURSES[e[0]])}</b> <span class="tag">מועד ${e[1]}'</span></div><div>${e[2]} · ${dl(e[2])}</div></div>`).join('')}`;
+},
+week(){
+  const s=new Date();s.setDate(s.getDate()-s.getDay());
+  const e=new Date(s);e.setDate(e.getDate()+6);
+  const list=sessions(s,e);let h='';
+  for(let i=0;i<7;i++){const d=new Date(s);d.setDate(d.getDate()+i);const ds=iso(d);const xs=list.filter(x=>x.date===ds);
+    h+=`<h2>${DAYS[i]} ${ds.slice(8)}/${ds.slice(5,7)}</h2>`+(xs.map(sessCard).join('')||'<div class="mut">—</div>')}
+  return h;
+},
+assign(){
+  const opts=Object.entries(COURSES).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('');
+  const list=S.assign.map((a,i)=>({...a,i})).sort((a,b)=>(a.status==='done')-(b.status==='done')||a.due.localeCompare(b.due));
+  const open=a=>a.open&&iso(new Date())<a.open?`<span class="tag">נפתח ב-${a.open}</span>`:'';
+  return `<h2>הגשות</h2>${list.map(a=>`<div class="card"><div class="row"><div><b>${esc(a.title)}</b> ${open(a)}<div class="mut">${esc(COURSES[a.course])}${a.weight?' · '+esc(a.weight)+(/^\d+$/.test(a.weight)?'%':''):''}</div></div><div>${a.status==='done'?'✅':dl(a.due)}<div class="mut">${a.due}</div></div></div>
+   <div class="row" style="margin-top:8px"><div><select onchange="setStatus(${a.i},this.value)" style="width:auto">${[['todo','לא התחלתי'],['doing','בעבודה'],['done','הוגש']].map(o=>`<option value="${o[0]}"${a.status===o[0]?' selected':''}>${o[1]}</option>`).join('')}</select></div>
+   <div>${a.link?`<a href="${esc(a.link)}" target="_blank" rel="noopener">Moodle</a> `:''}<button onclick="delAssign(${a.i})">מחק</button></div></div></div>`).join('')||'<div class="card mut">עדיין אין הגשות. הוסף למטה.</div>'}
+  <h2>הוספת הגשה</h2><div class="card">
+  <label>קורס</label><select id="a-course">${opts}</select>
+  <label>שם העבודה</label><input id="a-title">
+  <label>נפתח להגשה</label><input id="a-open" type="date">
+  <label>דדליין</label><input id="a-due" type="date">
+  <label>משקל בציון (%)</label><input id="a-w" type="number" inputmode="numeric">
+  <label>קישור ל-Moodle</label><input id="a-link" type="url">
+  <button class="p" style="margin-top:8px" onclick="addAssign()">הוסף</button></div>`;
+},
+att(){
+  const now=new Date(),td=iso(now);
+  const all=sessions(new Date(SEM[sem].start+'T00:00:00'),new Date(SEM[sem].end+'T00:00:00'));
+  const cs=[...new Set(SCHED.filter(r=>r[5]===sem).map(r=>r[3]))];
+  return `<h2>נוכחות — סמסטר ${sem==='A'?"א'":"ב'"}</h2>`+cs.map(c=>{
+    const ss=all.filter(x=>x.course===c&&x.date<=td);
+    const y=ss.filter(x=>S.att[x.id]==='y').length,n=ss.filter(x=>S.att[x.id]==='n').length,un=ss.length-y-n;
+    const pct=y+n?Math.round(100*y/(y+n)):0;
+    const mm=SYL[c]?.maxMiss;
+    const lec=ss.filter(x=>/שיעור/.test(x.type)&&S.att[x.id]==='n').length; // תרגולים/מעבדות לא נספרים במכסה
+    const left=mm==null?null:mm-lec;
+    const quota=mm==null?'':`<div class="${left<=1?'urg':left<=2?'soon':'mut'}">מכסת חיסורים בשיעורים: ${lec} מתוך ${mm} · נשארו ${Math.max(left,0)}${left<0?' (חרגת!)':''}</div>`;
+    return `<div class="card"><div class="row"><b>${esc(COURSES[c])}</b><span>${y+n?pct+'%':'—'}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>${quota}
+    <div class="mut">הייתי ${y} · לא הייתי ${n} · לא דווח ${un} (מתוך ${ss.length} עד היום)</div></div>`}).join('')
+   +`<h2>גיבוי</h2><div class="card row"><button onclick="exportJson()">ייצוא JSON</button><label>ייבוא <input type="file" accept=".json" onchange="importJson(event)"></label></div>`;
+},
+courses(){
+  return '<h2>קורסים וסילבוס</h2>'+Object.entries(COURSES).map(([c,name])=>{
+    const s=SYL[c];
+    if(!s)return `<div class="card"><b>${esc(name)}</b><div class="mut">אין עדיין סילבוס ב-Moodle</div></div>`;
+    return `<details class="card"><summary><b>${esc(name)}</b> <span class="mut">${esc(s.staff)}</span></summary>
+    <p><b>נוכחות:</b> ${esc(s.attNote)}</p><p><b>ציון:</b> ${esc(s.grade)}</p>
+    <b>נושאים</b><ol>${s.topics.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
+    <p class="mut">${esc(s.note)}</p><a href="${esc(s.moodle)}" target="_blank" rel="noopener">לאתר הקורס ב-Moodle</a></details>`}).join('');
+}};
+
+let tab='today';
+const TABS=[['today','היום'],['week','שבוע'],['assign','הגשות'],['att','נוכחות'],['courses','קורסים']];
+function render(){
+  document.getElementById('v').innerHTML=views[tab]();
+  document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="${t[0]===tab?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('');
+  document.getElementById('today').textContent=DAYS[new Date().getDay()]+' '+iso(new Date()).slice(8)+'/'+iso(new Date()).slice(5,7);
+}
+render();
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
